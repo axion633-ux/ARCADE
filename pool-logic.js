@@ -4,7 +4,7 @@
   else root.ArcadePool = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function (Matter) {
   'use strict';
-  const WIDTH = 800, HEIGHT = 420, RADIUS = 10, STEP_MS = 1000 / 60;
+  const WIDTH = 800, HEIGHT = 420, RADIUS = 10, STEP_MS = 1000 / 60, SUBSTEPS = 4, BALL_MASS = 0.17, ROLLING_DECEL = 0.08;
   const POCKETS = [{x:23,y:23},{x:400,y:19},{x:777,y:23},{x:23,y:397},{x:400,y:401},{x:777,y:397}];
   const GROUP = n => n >= 1 && n <= 7 ? 'solids' : n >= 9 && n <= 15 ? 'stripes' : null;
   function rack(seed = 1) {
@@ -36,11 +36,11 @@
     const rails = [];
     // Cushion segments leave room for the six pockets.
     [[35,16,330,28],[435,16,330,28],[35,404,330,28],[435,404,330,28],
-      [16,35,28,125],[16,260,28,125],[784,35,28,125],[784,260,28,125]].forEach(([x,y,w,h], i) => rails.push(Bodies.rectangle(x+w/2,y+h/2,w,h,{isStatic:true,label:'rail-'+i,restitution:.88})));
+      [16,35,28,125],[16,260,28,125],[784,35,28,125],[784,260,28,125]].forEach(([x,y,w,h], i) => rails.push(Bodies.rectangle(x+w/2,y+h/2,w,h,{isStatic:true,label:'rail-'+i,restitution:.82})));
     Composite.add(engine.world, rails);
     const bodies = new Map(), pocketed = new Set(); let firstContact = null, railHit = false, collisionCount = 0;
     for (const ball of snapshot.balls) {
-      const body = Bodies.circle(ball.x, ball.y, RADIUS, { label: 'ball-'+ball.number, restitution:.96, friction:0, frictionStatic:0, frictionAir:.001, density:.001, slop:.01 });
+      const body = Bodies.circle(ball.x, ball.y, RADIUS, { label: 'ball-'+ball.number, restitution:.94, friction:.006, frictionStatic:.01, frictionAir:0, mass:BALL_MASS, slop:.01 });
       body.poolNumber = ball.number; bodies.set(ball.number, body); Composite.add(engine.world, body);
     }
     Events.on(engine, 'collisionStart', event => {
@@ -54,19 +54,24 @@
     });
     return {
       engine, bodies, get firstContact(){return firstContact;}, get railHit(){return railHit;}, get collisionCount(){return collisionCount;}, get pocketed(){return [...pocketed];},
-      shoot(angle, power) { const cue = bodies.get(0); if (!cue) return false; const magnitude = 4 + Math.max(0, Math.min(1, power)) * 14; Body.setVelocity(cue, { x: Math.cos(angle) * magnitude, y: Math.sin(angle) * magnitude }); firstContact = null; railHit = false; collisionCount = 0; pocketed.clear(); return true; },
-      placeCue(x, y) { const cue = bodies.get(0); if (!cue) { const body = Bodies.circle(x,y,RADIUS,{label:'ball-0',restitution:.96,friction:0,frictionAir:.001,density:.001}); body.poolNumber=0; bodies.set(0,body); Composite.add(engine.world,body); } else Matter.Body.setPosition(cue,{x,y}); },
+      shoot(angle, power) { const cue = bodies.get(0); if (!cue) return false; const normalized = Math.max(0, Math.min(1, power)); const magnitude = normalized <= .025 ? 0 : .18 + Math.pow(normalized, 1.65) * 22; Body.setVelocity(cue, { x: Math.cos(angle) * magnitude, y: Math.sin(angle) * magnitude }); firstContact = null; railHit = false; collisionCount = 0; pocketed.clear(); return true; },
+      placeCue(x, y) { const cue = bodies.get(0); if (!cue) { const body = Bodies.circle(x,y,RADIUS,{label:'ball-0',restitution:.94,friction:.006,frictionAir:0,mass:BALL_MASS}); body.poolNumber=0; bodies.set(0,body); Composite.add(engine.world,body); } else Matter.Body.setPosition(cue,{x,y}); },
       step() {
-        Engine.update(engine, STEP_MS);
+        for (let substep = 0; substep < SUBSTEPS; substep++) {
+          Engine.update(engine, STEP_MS / SUBSTEPS);
+          // Check each small integration step so a fast ball cannot skip over a pocket.
+          for (const [number, body] of bodies) {
+            const pocket = POCKETS.find(p => Math.hypot(body.position.x-p.x, body.position.y-p.y) < 25);
+            if (pocket) { Composite.remove(engine.world, body); bodies.delete(number); pocketed.add(number); }
+          }
+        }
         for (const [number, body] of bodies) {
-          const pocket = POCKETS.find(p => Math.hypot(body.position.x-p.x, body.position.y-p.y) < 25);
-          if (pocket) { Composite.remove(engine.world, body); bodies.delete(number); pocketed.add(number); continue; }
           const v = body.velocity, speed = Math.hypot(v.x,v.y);
-          if (speed < .055) Matter.Body.setVelocity(body,{x:0,y:0});
-          else Matter.Body.setVelocity(body,{x:v.x*.976,y:v.y*.976});
+          if (speed <= ROLLING_DECEL) Matter.Body.setVelocity(body,{x:0,y:0});
+          else { const nextSpeed = speed - ROLLING_DECEL; Matter.Body.setVelocity(body,{x:v.x * nextSpeed / speed,y:v.y * nextSpeed / speed}); }
         }
       },
-      moving() { for (const body of bodies.values()) if (Math.hypot(body.velocity.x,body.velocity.y) > .055) return true; return false; },
+      moving() { for (const body of bodies.values()) if (Math.hypot(body.velocity.x,body.velocity.y) > ROLLING_DECEL) return true; return false; },
       snapshot() { return { balls:[...bodies].map(([number,b])=>({number,x:+b.position.x.toFixed(4),y:+b.position.y.toFixed(4)})).sort((a,b)=>a.number-b.number), groups:[...snapshot.groups], currentPlayer:snapshot.currentPlayer, breakShot:false, ballInHand:false, winner:snapshot.winner, shotNumber:snapshot.shotNumber }; },
       dispose() { Events.off(engine); Composite.clear(engine.world,false); }
     };
@@ -120,5 +125,5 @@
     for(const point of candidates){const dist=objects.length?Math.min(...objects.map(ball=>Math.hypot(ball.x-point.x,ball.y-point.y))):Math.hypot(point.x-400,point.y-210);let score=-dist+rng()*.01;if(difficulty==='hard')score-=Math.abs(point.y-210)*.08;if(!best||score>best.score)best={...point,score};}
     return{x:best.x,y:best.y};
   }
-  return { WIDTH, HEIGHT, RADIUS, POCKETS, STEP_MS, GROUP, rack, seeded, createWorld, resolveShot, legalCuePosition, chooseBotShot, chooseBotCuePosition };
+  return { WIDTH, HEIGHT, RADIUS, POCKETS, STEP_MS, SUBSTEPS, GROUP, rack, seeded, createWorld, resolveShot, legalCuePosition, chooseBotShot, chooseBotCuePosition };
 });
