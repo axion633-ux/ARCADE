@@ -1,0 +1,94 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101114">
+  <meta name="description" content="A friendly arcade for chess, Monopoly, and more.">
+  <script>
+    window.arcadeReportAssetError = function (asset) {
+      var show = function () {
+        var notice = document.getElementById('asset-error');
+        if (!notice) {
+          notice = document.createElement('div');
+          notice.id = 'asset-error';
+          notice.className = 'asset-error';
+          notice.setAttribute('role', 'alert');
+          notice.setAttribute('aria-live', 'assertive');
+          document.body.prepend(notice);
+        }
+        notice.textContent = asset + ' failed to load. Refresh the page or check your connection.';
+        notice.hidden = false;
+      };
+      if (document.body) show();
+      else document.addEventListener('DOMContentLoaded', show, { once: true });
+    };
+  </script>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css" onerror="arcadeReportAssetError('Chessboard styles')">
+  <link rel="stylesheet" href="styles.css">
+  <title>Arcade — play together</title>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#home" aria-label="Arcade home"><span class="brand-mark">✦</span><span>arcade</span></a>
+      <nav class="desktop-nav" aria-label="Main navigation">
+        <button class="nav-link active" data-page="home">Home</button>
+        <button class="nav-link" data-page="play">Play</button>
+        <button class="nav-link" data-page="friends">Friends <span class="nav-dot" id="online-dot"></span></button>
+        <button class="nav-link" data-page="profile">Profile</button>
+      </nav>
+      <div class="top-actions"><button class="icon-button" id="theme-toggle" aria-label="Toggle theme" title="Toggle theme">☼</button><button class="profile-chip" id="profile-open"><span class="avatar" id="header-avatar">♟</span><span id="header-name">Guest</span></button></div>
+    </header>
+    <div id="app-notice" class="app-notice hidden" role="status" aria-live="polite"></div>
+
+    <main id="main-content">
+      <section class="page active" id="page-home">
+        <div class="hero">
+          <div class="hero-copy"><div class="eyebrow"><span class="pulse"></span> YOUR TABLE IS READY</div><h1>Good games.<br><span>Good company.</span></h1><p>Pull up a chair. Your next favorite game is a move away.</p><button class="button primary" data-page="play">Find a game <span>↗</span></button></div>
+          <div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="hero-piece">♞</div><span class="spark spark-a">✦</span><span class="spark spark-b">✳</span><span class="spark spark-c">✦</span><div class="hero-tag">YOUR MOVE <span>→</span></div></div>
+        </div>
+        <div class="section-heading"><div><div class="eyebrow muted">PICK UP WHEREVER</div><h2>Choose your game</h2></div><button class="text-button" data-page="play">See all <span>→</span></button></div>
+        <div class="game-grid">
+          <article class="game-card chess-card"><div class="card-top"><span class="game-kicker">STRATEGY · 2 PLAYERS</span><span class="card-icon">♞</span></div><h3>Chess</h3><p>Classic moves. Fresh rivalries.</p><div class="card-footer"><span class="presence-mini"><i></i> <b id="chess-online-count">2,418</b> playing</span><button class="round-arrow" data-launch="chess" aria-label="Play chess">↗</button></div><div class="card-decoration chess-deco">♜</div></article>
+          <article class="game-card mono-card"><div class="card-top"><span class="game-kicker">STRATEGY · 2–4 PLAYERS</span><span class="card-icon">⌂</span></div><h3>Monopoly</h3><p>Make a little deal. Make a fortune.</p><div class="card-footer"><span class="presence-mini"><i></i> <b>672</b> playing</span><button class="round-arrow" data-launch="monopoly" aria-label="Play Monopoly">↗</button></div><div class="card-decoration mono-deco">$</div></article>
+          <article class="game-card coming-card"><div class="coming-orb">✳</div><span class="game-kicker">SOMETHING NEW IS COOKING</span><h3>Your next game<br>goes here.</h3><p>A spot for the next classic.</p><span class="coming-pill">COMING SOON</span></article>
+        </div>
+        <div class="home-bottom"><div class="mini-banner"><span class="banner-icon">♟</span><div><b>Practice makes progress</b><span>Sharpen your chess with a bot that meets you where you are.</span></div><button class="text-button" data-launch="chess" data-mode="bot">Try it <span>→</span></button></div><div class="online-card"><div class="online-avatars"><span>J</span><span>M</span><span>A</span><b>+8</b></div><div><b>Friends are around</b><span id="friends-online-caption">10 friends online now</span></div><button class="icon-button" data-page="friends" aria-label="View friends">↗</button></div></div>
+      </section>
+
+      <section class="page" id="page-play">
+        <div class="page-intro"><div class="eyebrow muted">THE ARCADE</div><h1>What sounds fun?</h1><p>Pick a game and choose how you want to play.</p></div>
+        <div class="play-list"><article class="play-row"><div class="play-art chess-art">♞</div><div class="play-info"><span class="game-kicker">STRATEGY · 2 PLAYERS</span><h2>Chess</h2><p>Take your time or race the clock.</p></div><div class="play-modes"><button class="button secondary" data-launch="chess" data-mode="local">On this device</button><button class="button primary" data-launch="chess" data-mode="bot">Play the bot <span>→</span></button></div></article><article class="play-row"><div class="play-art monopoly-art">⌂</div><div class="play-info"><span class="game-kicker">STRATEGY · 2–4 PLAYERS</span><h2>Monopoly</h2><p>Buy smart. Collect rent. Stay in the game.</p></div><div class="play-modes"><button class="button secondary" data-launch="monopoly">Start a table <span>→</span></button></div></article><article class="play-row future-row"><div class="play-art future-art">✳</div><div class="play-info"><span class="game-kicker">COMING SOON</span><h2>More games, more often.</h2><p>This table has room for your next favorite.</p></div></article></div>
+      </section>
+
+      <section class="page" id="page-chess">
+        <div class="game-header"><button class="back-button" data-page="home">&#8592; <span>Arcade</span></button><div><div class="eyebrow muted">CLASSIC STRATEGY</div><h1>Chess</h1></div><button class="icon-button" id="chess-settings" aria-label="Game settings">⚙</button></div>
+        <div class="chess-layout"><div class="board-column"><div class="opponent-bar"><span class="avatar bot-avatar" id="black-avatar">♞</span><div class="player-label"><b id="black-name">Guest 2</b><span id="black-status">Ready when you are</span></div><span class="clock" id="black-clock">10:00</span></div><div class="board-wrap"><div id="chessboard" aria-label="Chess board"></div><div class="board-coords" aria-hidden="true"><span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span></div></div><div class="player-bar"><span class="avatar you-avatar" id="white-avatar">G</span><div class="player-label"><b id="white-name">Guest</b><span id="white-status">Your turn</span></div><span class="clock active-clock" id="white-clock">10:00</span></div><div class="captured-row"><span class="captured-label">TAKEN</span><span id="captured-black"></span><span class="capture-divider"></span><span id="captured-white"></span></div></div><aside class="chess-sidebar"><div class="sidebar-tabs"><button class="side-tab selected" data-tab="moves">Moves</button><button class="side-tab" data-tab="learn">Learn</button></div><div class="side-panel" id="panel-moves"><div class="turn-pill"><span class="turn-dot"></span><span id="turn-message">White to move</span></div><div class="move-list" id="move-list"><div class="empty-moves">Make your first move.<br><span>The board is yours.</span></div></div><div class="game-controls"><button class="button secondary full" id="undo-move">↶ &nbsp; Take back</button><div class="control-row"><button class="text-button" id="offer-draw">Offer a draw</button><button class="text-button danger" id="resign-game">Call it</button></div><button class="text-button new-game" id="new-game">＋ New game</button></div></div><div class="side-panel hidden" id="panel-learn"><div class="learn-hero">✦</div><div class="eyebrow muted">YOUR CHESS COACH</div><h3>Learn as you play</h3><p>Choose a legal move and I’ll explain what makes it useful. I’ll also let you know when a move leaves something hanging.</p><div class="coach-tip" id="coach-tip">Tap <b>Find a clever move</b> to find a good idea.</div><button class="button primary full" id="suggest-move">Find a clever move <span>✦</span></button><button class="button secondary full" id="bot-warning">Check my plan</button></div><div class="sidebar-bottom"><span class="sound-label">SOUND</span><button class="sound-toggle on" id="sound-toggle" aria-label="Toggle sound">♪ <i></i></button><button class="icon-button fullscreen-button" id="flip-board" aria-label="Flip board">⟳</button></div></aside></div>
+        <div class="mobile-game-actions"><button class="button secondary" id="mobile-undo">↶ Undo</button><button class="button secondary" id="mobile-suggest">✦ Hint</button><button class="button primary" id="mobile-new">＋ New game</button></div>
+      </section>
+
+      <section class="page" id="page-monopoly">
+        <div class="game-header"><button class="back-button" data-page="home">&#8592; <span>Arcade</span></button><div><div class="eyebrow muted">PROPERTY & LUCK</div><h1>Monopoly</h1></div><button class="icon-button" id="mono-new" aria-label="Start a new Monopoly table" title="Start a new table">&#10227;</button></div>
+        <div class="mono-layout"><div class="mono-board-wrap"><div id="mono-board" class="mono-board"></div></div><aside class="mono-sidebar"><div class="mono-turn"><div class="eyebrow muted">PLAYER UP</div><div class="mono-current" id="mono-current"></div><div class="dice-result" id="dice-result">Give the dice a toss.</div><button class="button primary full" id="roll-dice">Roll &amp; roam <span>&#127922;</span></button></div><div class="property-card" id="property-card"><div class="eyebrow muted">YOU LANDED ON</div><h3 id="landing-name">Ready for a little chaos?</h3><p id="landing-copy">Give the dice a toss. Your future landlord awaits.</p><div class="property-price" id="property-price"></div><button class="button secondary full hidden" id="buy-property">Claim this spot</button><button class="button secondary full hidden" id="build-house">Build a house</button><button class="button secondary full hidden" id="pay-rent">Next player →</button></div><div class="mono-log" id="mono-log"><div class="eyebrow muted">ARCADE CHAT</div><div id="mono-log-lines">Welcome to the deal. Roll when you are ready.</div></div></aside></div><p class="mono-note">Local table - 2 to 4 players. Make a deal, dodge rent, keep your friends.</p>
+      </section>
+
+      <section class="page" id="page-friends"><div class="page-intro"><div class="eyebrow muted">YOUR PEOPLE</div><h1>Friends</h1><p>Good games get better with good company.</p></div><div class="friends-layout"><div class="friends-main"><div class="friends-tools"><label class="search-box"><span>⌕</span><input id="friend-search" type="search" placeholder="Find someone by username" aria-label="Search users"></label><button class="button secondary" id="add-friend">＋ Add friend</button></div><div class="friend-section-head"><h2>Online now</h2><span class="count-pill" id="friends-count">3</span></div><div class="friend-list" id="friend-list"><div class="friend-row"><span class="avatar friend-avatar green">J</span><div class="friend-detail"><b>jules_w</b><span><i class="online-dot"></i> Online · just now</span></div><button class="button invite-button" data-invite="jules_w">Invite</button><button class="icon-button friend-more" aria-label="More options">•••</button></div><div class="friend-row"><span class="avatar friend-avatar lilac">M</span><div class="friend-detail"><b>mari_moves</b><span><i class="online-dot"></i> Online · 2 min ago</span></div><button class="button invite-button" data-invite="mari_moves">Invite</button><button class="icon-button friend-more" aria-label="More options">•••</button></div><div class="friend-row"><span class="avatar friend-avatar orange">A</span><div class="friend-detail"><b>aceofboards</b><span><i class="online-dot"></i> Online · 5 min ago</span></div><button class="button invite-button" data-invite="aceofboards">Invite</button><button class="icon-button friend-more" aria-label="More options">•••</button></div></div><div class="friend-section-head requests-head"><h2>Friend requests</h2><span class="count-pill muted-pill" id="request-count">0</span></div><div id="request-list" class="request-list"><div class="empty-state">No new requests. Your next opponent might be one search away.</div></div></div><aside class="invite-aside"><div class="invite-aside-icon">✉</div><div class="eyebrow muted">SEND AN INVITE</div><h3>Play a friend</h3><p>Send a game invite and meet at the board.</p><label class="select-label">CHOOSE A GAME<select id="invite-game"><option value="chess">Chess</option><option value="monopoly">Monopoly</option></select></label><button class="button primary full" id="send-invite">Choose a friend <span>→</span></button><div class="aside-online"><span class="online-dot"></span> 3 friends online</div></aside></div></section>
+
+      <section class="page" id="page-profile"><div class="page-intro"><div class="eyebrow muted">YOUR CORNER</div><h1>Profile</h1><p>A little home base for your time at the table.</p></div><div class="profile-layout"><div class="profile-card"><div class="profile-cover"><span>✦</span><span>♞</span><span>✳</span></div><div class="profile-body"><div class="profile-avatar" id="profile-avatar">G</div><label class="eyebrow muted">DISPLAY NAME</label><input class="profile-input" id="display-name" value="Guest" maxlength="24"><label class="eyebrow muted">USERNAME</label><div class="username-field"><span>@</span><input id="username" value="guest_player" maxlength="24"></div><button class="button primary full" id="save-profile">Save profile</button></div></div><div class="profile-side"><div class="stat-card"><div class="eyebrow muted">YOUR STATS</div><div class="stat-row"><span>Games played</span><b id="stat-games">0</b></div><div class="stat-row"><span>Chess wins</span><b id="stat-wins">0</b></div><div class="stat-row"><span>Friends</span><b id="stat-friends">3</b></div></div><div class="account-card"><div><h3>Connect your account</h3><p>Sign in to keep your friends and games across devices.</p></div><button class="button secondary full" id="auth-button">Sign in or create account <span>→</span></button><button class="text-button signout-button hidden" id="sign-out">Sign out</button></div></div></div></section>
+    </main>
+    <nav class="mobile-nav" aria-label="Mobile navigation"><button class="mobile-nav-link active" data-page="home"><span>⌂</span>Home</button><button class="mobile-nav-link" data-page="play"><span>♟</span>Play</button><button class="mobile-nav-link" data-page="friends"><span>♡</span>Friends</button><button class="mobile-nav-link" data-page="profile"><span>◉</span>Profile</button></nav>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </div>
+  <div class="modal-backdrop hidden" id="modal-backdrop"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="modal-close" id="modal-close" aria-label="Close">×</button><div id="modal-content"></div></div></div>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js" onerror="arcadeReportAssetError('jQuery')"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js" onerror="arcadeReportAssetError('Chess rules library')"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js" onerror="arcadeReportAssetError('Chessboard library')"></script>
+  <script src="config.js" onerror="window.arcadeReportAssetError('Supabase configuration')"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="arcadeReportAssetError('Supabase client')"></script>
+  <script src="social-logic.js"></script>
+  <script src="app.js" onerror="arcadeReportAssetError('Arcade application')"></script>
+</body>
+</html>

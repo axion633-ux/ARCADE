@@ -1,0 +1,10 @@
+{
+  "name": "Arcade — play together",
+  "short_name": "Arcade",
+  "description": "A friendly arcade for chess, Monopoly, and more.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#101114",
+  "theme_color": "#101114",
+  "icons": [{ "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

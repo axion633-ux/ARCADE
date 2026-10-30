@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "test": "node --test tests/social-logic.test.js tests/chess-bot.test.js"
+  },
+  "devDependencies": {
+    "chess.js": "^0.10.3"
+  }
+}
