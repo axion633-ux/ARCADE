@@ -1,8 +1,9 @@
 ﻿(() => {
   'use strict';
+  const BOT_THINK_DELAY = Object.freeze({ easy: 800, medium: 900, hard: 1050, expert: 1200 });
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-  const state = { page: 'home', name: localStorage.getItem('arcade.name') || 'Guest', username: localStorage.getItem('arcade.username') || 'guest_player', games: 0, wins: 0, chessMode: 'local', chessColor: 'w', selected: null, chess: null, board: null, history: [], clocks: [600, 600], clockMode: 10, clockTimer: null, worker: null, sound: true, supabase: null, user: null, socialLoading: null, presenceChannel: null, requests: [], sentRequests: [], activeRoom: null, roomChannel: null, roomPly: 0, finishedMessage: '', chessFinished: false, friends: [{ username: 'jules_w', name: 'Jules', online: true }, { username: 'mari_moves', name: 'Mari', online: true }, { username: 'aceofboards', name: 'Ace', online: true }], mono: null };
+  const state = { page: 'home', name: localStorage.getItem('arcade.name') || 'Guest', username: localStorage.getItem('arcade.username') || 'guest_player', games: 0, wins: 0, chessMode: 'local', chessColor: 'w', selected: null, chess: null, board: null, history: [], clocks: [600, 600], clockMode: 10, clockTimer: null, worker: null, botThinking: false, botThinkTimer: null, botRequestId: 0, sound: true, supabase: null, user: null, socialLoading: null, presenceChannel: null, requests: [], sentRequests: [], activeRoom: null, roomChannel: null, roomPly: 0, finishedMessage: '', chessFinished: false, friends: [{ username: 'jules_w', name: 'Jules', online: true }, { username: 'mari_moves', name: 'Mari', online: true }, { username: 'aceofboards', name: 'Ace', online: true }], mono: null, monoRoom: null, monoChannel: null, monoPresence: null, monoMembers: [], monoHeartbeat: null };
   const toast = message => { const node = $('#toast'); node.textContent = message; node.classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(() => node.classList.remove('show'), 2600); };
   const escapeHtml = text => String(text).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   const go = page => {
@@ -14,9 +15,9 @@
     if (page === 'monopoly' && !state.mono) startMonopoly();
     window.scrollTo(0, 0);
   };
-  document.addEventListener('click', event => {
+  document.addEventListener('click', async event => {
     const pageButton = event.target.closest('[data-page]'); if (pageButton) { go(pageButton.dataset.page); return; }
-    const launcher = event.target.closest('[data-launch]'); if (launcher) { if (launcher.dataset.launch === 'chess') openChessSetup(launcher.dataset.mode || ''); else { state.mono = null; startMonopoly(); go('monopoly'); } }
+    const launcher = event.target.closest('[data-launch]'); if (launcher) { if (launcher.dataset.launch === 'chess') openChessSetup(launcher.dataset.mode || ''); else if (launcher.dataset.launch === 'pool') { go('pool'); window.ArcadePoolUI?.start(launcher.dataset.mode || 'bot'); } else { await leaveMonopolyOnline(); state.mono = null; startMonopoly(); go('monopoly'); } }
   });
 
   function showModal(content) { $('#modal-content').innerHTML = content; $('#modal-backdrop').classList.remove('hidden'); }
@@ -38,8 +39,8 @@
   const pieceAsset = (piece) => `https://chessboardjs.com/img/chesspieces/wikipedia/${piece}.png`;
   function startChess() {
     if (typeof Chess === 'undefined' || typeof Chessboard === 'undefined') { window.arcadeReportAssetError('Chess libraries'); return; }
-    clearInterval(state.clockTimer); state.chess = new Chess(); state.history = []; state.clocks = [state.clockMode * 60, state.clockMode * 60]; state.selected = null; state.finishedMessage = ''; state.chessFinished = false;
-    state.board = Chessboard('chessboard', { position: 'start', draggable: true, orientation: state.chessColor === 'b' && state.chessMode !== 'local' ? 'black' : 'white', pieceTheme: pieceAsset, onDragStart: dragStart, onDrop: dropMove, onSnapEnd: () => state.board.position(state.chess.fen()), onMouseoverSquare: () => {} });
+    clearInterval(state.clockTimer); clearTimeout(state.botThinkTimer); state.botThinking = false; state.botRequestId++; state.chess = new Chess(); state.history = []; state.clocks = [state.clockMode * 60, state.clockMode * 60]; state.selected = null; state.finishedMessage = ''; state.chessFinished = false;
+    state.board = Chessboard('chessboard', { position: 'start', draggable: true, moveSpeed: 260, snapSpeed: 120, snapbackSpeed: 120, orientation: state.chessColor === 'b' && state.chessMode !== 'local' ? 'black' : 'white', pieceTheme: pieceAsset, onDragStart: dragStart, onDrop: dropMove, onSnapEnd: () => state.board.position(state.chess.fen()), onMouseoverSquare: () => {} });
     const onlineBlack = state.chessMode === 'online' && state.chessColor === 'b';
     const onlineWhite = state.chessMode === 'online' && state.chessColor === 'w';
     $('#black-name').textContent = state.chessMode === 'online' ? (onlineBlack ? state.name : 'Opponent') : state.chessMode === 'bot' ? (state.chessColor === 'w' ? 'Arcade bot' : state.name) : 'Guest 2';
@@ -49,7 +50,7 @@
     $$('.clock').forEach(clock => clock.classList.toggle('hidden', !state.clockMode));
     renderChess(); state.board.resize();
     if (state.clockMode) state.clockTimer = setInterval(tickClock, 1000);
-    if (state.chessMode === 'bot' && state.chessColor === 'b') requestBotMove();
+    if (state.chessMode === 'bot') { try { prepareBotWorker(); } catch (_) { window.arcadeReportAssetError('Chess bot worker'); } if (state.chessColor === 'b') requestBotMove(); }
     state.games += 1; updateStats();
   }
   const chessEnded = () => !state.chess || state.chess.game_over() || !!state.finishedMessage;
@@ -85,7 +86,7 @@
     const before = state.chess.fen(); const move = state.chess.move({ from, to, promotion }); if (!move) return false;
     state.history.push(before); state.selected = null; renderChess(move); if (state.sound) playTick();
     if (state.chessMode === 'online') syncMove(move);
-    if (!chessEnded() && state.chessMode === 'bot' && state.chess.turn() !== state.chessColor) setTimeout(requestBotMove, 180);
+    if (!chessEnded() && state.chessMode === 'bot' && state.chess.turn() !== state.chessColor) requestBotMove();
     return true;
   }
   function choosePromotion(onChoose) { showModal(`<div class="eyebrow muted">PROMOTION</div><h2 id="modal-title">Choose your piece</h2><p>Your pawn reached the far side. What should it become?</p><div class="mode-grid">${[['q','Queen ♛'],['r','Rook ♜'],['b','Bishop ♝'],['n','Knight ♞']].map(([key, label]) => `<button class="mode-choice" data-promotion="${key}"><b>${label}</b></button>`).join('')}</div>`); $$('.mode-choice').forEach(button => button.addEventListener('click', () => { const choice = button.dataset.promotion; closeModal(); onChoose(choice); })); }
@@ -99,8 +100,8 @@
     $('#move-list').scrollTop = $('#move-list').scrollHeight;
     const side = state.chess.turn() === 'w' ? 'White' : 'Black';
     const check = state.chess.in_check();
-    $('#turn-message').textContent = chessEnded() ? resultText() : check ? `${side} is in check! Find a safe square.` : `${side} to move`;
-    $('#white-status').textContent = chessEnded() ? resultText() : state.chess.turn() === 'w' ? (check ? 'King under fire!' : 'Your move') : state.chessMode === 'bot' ? 'Bot is plotting…' : check ? 'King under fire!' : 'At the board';
+    $('#turn-message').textContent = chessEnded() ? resultText() : state.botThinking ? 'Bot is thinking…' : check ? `${side} is in check! Find a safe square.` : `${side} to move`;
+    $('#white-status').textContent = chessEnded() ? resultText() : state.chess.turn() === 'w' ? (check ? 'King under fire!' : 'Your move') : state.chessMode === 'bot' ? (state.botThinking ? 'Thinking…' : 'Bot is plotting…') : check ? 'King under fire!' : 'At the board';
     $('#black-status').textContent = chessEnded() ? resultText() : state.chess.turn() === 'b' ? 'Your turn' : 'Ready';
     $('#white-clock').classList.toggle('active-clock', state.chess.turn() === 'w'); $('#black-clock').classList.toggle('active-clock', state.chess.turn() === 'b');
     drawCaptured();
@@ -113,8 +114,18 @@
   function requestBotMove() {
     if (chessEnded() || state.chess.turn() === state.chessColor) return;
     const depths = { easy: 1, medium: 2, hard: 3, expert: 4 }, randomness = { easy: 0.7, medium: 0.28, hard: 0.08, expert: 0 };
+    const delay = BOT_THINK_DELAY[state.difficulty || 'medium'];
+    const requestId = ++state.botRequestId, fen = state.chess.fen(), startedAt = performance.now();
+    state.botThinking = true; renderChess();
     const message = { fen: state.chess.fen(), depth: depths[state.difficulty || 'medium'], randomness: randomness[state.difficulty || 'medium'], color: state.chess.turn() };
-    try { if (!state.worker) state.worker = new Worker('chess-ai-worker.js'); state.worker.onmessage = event => { if (event.data.move && state.chess && !chessEnded()) makeMove(event.data.move.from, event.data.move.to, event.data.move.promotion, true); }; state.worker.onerror = () => { state.worker.terminate(); state.worker = null; window.arcadeReportAssetError('Chess bot worker'); }; state.worker.onmessageerror = () => window.arcadeReportAssetError('Chess bot response'); state.worker.postMessage(message); } catch (_) { window.arcadeReportAssetError('Chess bot worker'); }
+    try { const worker = prepareBotWorker(); worker.onmessage = event => { const move = event.data.move; if (!move || requestId !== state.botRequestId || !state.chess || chessEnded() || state.chess.fen() !== fen || state.chess.turn() === state.chessColor) return; const wait = Math.max(0, delay - (performance.now() - startedAt)); clearTimeout(state.botThinkTimer); state.botThinkTimer = setTimeout(() => { if (requestId !== state.botRequestId || !state.chess || chessEnded()) return; state.botThinking = false; makeMove(move.from, move.to, move.promotion, true); }, wait); }; worker.postMessage(message); } catch (_) { state.botThinking = false; window.arcadeReportAssetError('Chess bot worker'); renderChess(); }
+  }
+  function prepareBotWorker() {
+    if (state.worker) return state.worker;
+    state.worker = new Worker('chess-ai-worker.js');
+    state.worker.onerror = () => { state.botThinking = false; state.worker?.terminate(); state.worker = null; window.arcadeReportAssetError('Chess bot worker'); if (state.chess) renderChess(); };
+    state.worker.onmessageerror = () => window.arcadeReportAssetError('Chess bot response');
+    return state.worker;
   }
   function undoMove() { if (state.chessMode === 'online') return toast('Undo is available in local practice games.'); if (!state.chess || !state.history.length) { toast('There are no moves to undo yet.'); return; } state.chess.load(state.history.pop()); if (state.chessMode === 'bot' && state.history.length) state.chess.load(state.history.pop()); state.finishedMessage = ''; state.chessFinished = false; if (state.clockMode) { clearInterval(state.clockTimer); state.clockTimer = setInterval(tickClock, 1000); } renderChess(); }
   $('#undo-move').addEventListener('click', undoMove); $('#mobile-undo').addEventListener('click', undoMove);
@@ -188,13 +199,97 @@
     { icon: '\u{1F697}', color: '#c1f078' }, { icon: '\u{1F408}', color: '#f4a05d' },
     { icon: '\u{1F3A9}', color: '#b7a6ff' }, { icon: '\u{1F680}', color: '#6dd6cf' }
   ];
+  function showMonopolyOnlineMenu() {
+    if (!state.user || !state.supabase) { showModal('<div class="eyebrow muted">ONLINE MONOPOLY</div><h2 id="modal-title">Bring your friends to the table</h2><p>Online rooms need a signed-in account so your seat and game can follow you between devices.</p><button class="button primary full" id="mono-account">Sign in or create account</button><button class="button secondary full" id="mono-menu-cancel">Maybe later</button>'); $('#mono-account').addEventListener('click', () => showAuth()); $('#mono-menu-cancel').addEventListener('click', closeModal); return; }
+    showModal('<div class="eyebrow muted">ONLINE MONOPOLY</div><h2 id="modal-title">Deal me in</h2><p>Create a room for up to four players, or enter a friend’s six-character code.</p><button class="button primary full" id="mono-create-online">Create game</button><label for="mono-join-code">ROOM CODE<input id="mono-join-code" maxlength="6" autocomplete="off" placeholder="E.G. A1B2C3"></label><button class="button secondary full" id="mono-join-online">Join game</button>');
+    $('#mono-create-online').addEventListener('click', createMonopolyRoom);
+    $('#mono-join-online').addEventListener('click', () => joinMonopolyRoom($('#mono-join-code').value));
+    $('#mono-join-code').addEventListener('keydown', event => { if (event.key === 'Enter') joinMonopolyRoom(event.target.value); });
+  }
+  async function createMonopolyRoom() {
+    if (!state.supabase || !state.user) return toast('Sign in first to save your online seat.');
+    const button = $('#mono-create-online'); if (button) { button.disabled = true; button.textContent = 'Setting the table…'; }
+    const { data, error } = await state.supabase.rpc('create_monopoly_room', { p_name: state.name });
+    if (error) { toast(error.message); if (button) { button.disabled = false; button.textContent = 'Create game'; } return; }
+    await connectMonopolyRoom(data);
+  }
+  async function joinMonopolyRoom(code) {
+    if (!state.supabase || !state.user) return toast('Sign in first to save your online seat.');
+    code = String(code || '').trim().toUpperCase(); if (!/^[A-Z0-9]{6}$/.test(code)) return toast('Room codes have six letters or numbers.');
+    const button = $('#mono-join-online'); if (button) { button.disabled = true; button.textContent = 'Finding your seat…'; }
+    const { data, error } = await state.supabase.rpc('join_monopoly_room', { p_code: code, p_name: state.name });
+    if (error) { toast(error.message); if (button) { button.disabled = false; button.textContent = 'Join game'; } return; }
+    await connectMonopolyRoom(data);
+  }
+  async function connectMonopolyRoom(room) {
+    if (state.monoChannel) await state.supabase.removeChannel(state.monoChannel);
+    if (state.monoPresence) await state.supabase.removeChannel(state.monoPresence);
+    clearInterval(state.monoHeartbeat);
+    state.monoRoom = { id: room.room_id, code: room.code, hostId: room.host_id, status: room.status };
+    state.mono = room.state; state.mono.players.forEach((player, index) => { player.id ||= state.monoMembers.find(member => member.seat === index)?.player_id; });
+    go('monopoly'); buildMonopolyBoard(); drawMonopoly();
+    await refreshMonopolyMembers();
+    state.monoChannel = state.supabase.channel('monopoly-room-' + room.room_id)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'monopoly_rooms', filter: `id=eq.${room.room_id}` }, payload => handleMonopolyRoom(payload.new))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'monopoly_room_players', filter: `room_id=eq.${room.room_id}` }, () => refreshMonopolyMembers())
+      .subscribe(status => { if (status === 'SUBSCRIBED') { refreshMonopolyMembers(); if (state.monoRoom?.status === 'lobby') renderMonopolyLobby(); } });
+    const presence = state.supabase.channel('monopoly-presence-' + room.room_id, { config: { presence: { key: state.user.id } } });
+    state.monoPresence = presence;
+    presence.on('presence', { event: 'sync' }, () => { const online = presence.presenceState(); state.monoMembers = state.monoMembers.map(member => ({ ...member, connected: Object.hasOwn(online, member.player_id) })); renderMonopolyLobby(); })
+      .subscribe(status => { if (status === 'SUBSCRIBED') presence.track({ player_id: state.user.id, name: state.name }); });
+    clearInterval(state.monoHeartbeat); state.monoHeartbeat = setInterval(async () => { const { error } = await state.supabase.rpc('heartbeat_monopoly_room', { p_room_id: room.room_id, p_connected: true }); if (!error) await state.supabase.rpc('skip_disconnected_monopoly_turn', { p_room_id: room.room_id }); }, 5000);
+    showMonopolyLobby();
+  }
+  async function refreshMonopolyMembers() {
+    if (!state.monoRoom || !state.supabase) return;
+    const { data, error } = await state.supabase.from('monopoly_room_players').select('player_id,seat,display_name,connected,last_seen').eq('room_id', state.monoRoom.id).order('seat');
+    if (error) { console.warn('Monopoly lobby players did not load:', error); return; }
+    state.monoMembers = data || [];
+    if (state.mono?.players) state.mono.players.forEach(player => { const member = state.monoMembers.find(item => item.player_id === player.id); if (member) player.name = member.display_name; });
+    renderMonopolyLobby(); drawMonopoly();
+  }
+  function showMonopolyLobby() {
+    renderMonopolyLobby();
+  }
+  function renderMonopolyLobby() {
+    if (!state.monoRoom || !$('#modal-backdrop')) return;
+    const room = state.monoRoom, members = state.monoMembers, host = room.hostId === state.user?.id, active = room.status === 'active';
+    $('#mono-player-status').innerHTML = members.map(member => `<span title="${escapeHtml(member.display_name)} · ${member.connected ? 'connected' : 'disconnected'}"><i class="${member.connected ? 'is-connected' : ''}"></i>${escapeHtml(member.display_name)} <small>${member.connected ? 'Online' : 'Disconnected'}</small></span>`).join('');
+    if (active) { closeModal(); $('#mono-note').textContent = 'Online table · room ' + room.code + ' · Invite friends from the Friends page.'; drawMonopoly(); return; }
+    showModal(`<div class="eyebrow muted">ROOM ${escapeHtml(room.code)}</div><h2 id="modal-title">${host ? 'Your table is ready' : 'You have a seat'}</h2><p>Share this code with friends. The host can start once at least two players are here.</p><div class="mono-lobby-players">${members.map(member => `<div class="mono-lobby-player"><span class="current-token">${escapeHtml(tokenSet[member.seat]?.icon || '♟')}</span><b>${escapeHtml(member.display_name)}${member.player_id === room.hostId ? ' · host' : ''}</b><span class="mono-connection ${member.connected ? 'connected' : ''}">${member.connected ? 'Connected' : 'Disconnected'}</span></div>`).join('') || '<p>Loading seats…</p>'}</div>${host ? `<button class="button primary full" id="mono-start-online" ${members.length < 2 ? 'disabled' : ''}>Start game (${members.length}/4)</button>` : '<p class="mono-waiting">Waiting for the host to start…</p>'}<button class="button secondary full" id="mono-copy-code">Copy room code</button>`);
+    $('#mono-start-online')?.addEventListener('click', startOnlineMonopoly);
+    $('#mono-copy-code')?.addEventListener('click', async () => { try { await navigator.clipboard.writeText(room.code); toast('Room code copied. Deal away!'); } catch (_) { toast('Room code: ' + room.code); } });
+  }
+  async function startOnlineMonopoly() {
+    if (!state.monoRoom || state.monoRoom.hostId !== state.user?.id || state.monoMembers.length < 2) return;
+    const { error } = await state.supabase.from('monopoly_rooms').update({ status: 'active', state: { ...state.mono, lastAction: state.name + ' opened the table.' }, turn_player_id: state.user.id, updated_at: new Date().toISOString() }).eq('id', state.monoRoom.id);
+    if (error) return toast(error.message);
+    state.monoRoom.status = 'active'; state.mono.status = 'active'; state.mono.lastAction = state.name + ' opened the table.'; closeModal(); $('#mono-note').textContent = 'Online table · room ' + state.monoRoom.code + ' · Invite friends from the Friends page.'; drawMonopoly();
+  }
+  function handleMonopolyRoom(room) {
+    if (!room || !state.monoRoom || room.id !== state.monoRoom.id) return;
+    state.monoRoom.status = room.status; state.mono = room.state; state.mono.players.forEach((player, index) => { player.id ||= state.monoMembers.find(member => member.seat === index)?.player_id; });
+    if (room.status === 'active') { closeModal(); $('#mono-note').textContent = 'Online table · room ' + state.monoRoom.code + ' · Invite friends from the Friends page.'; }
+    if (room.state?.lastAction) $('#landing-copy').textContent = room.state.lastAction;
+    drawMonopoly(); renderMonopolyLobby();
+  }
+  function canActMonopoly() { if (!state.monoRoom) return true; const current = state.mono?.players?.[state.mono.current]; return state.monoRoom.status === 'active' && current?.id === state.user?.id; }
+  async function persistMonopoly(action) {
+    if (!state.monoRoom || !state.supabase) return;
+    if (action) { state.mono.lastAction = action; if (!state.mono.pending) $('#landing-copy').textContent = action; }
+    const current = state.mono.players[state.mono.current];
+    const { error } = await state.supabase.from('monopoly_rooms').update({ state: state.mono, status: state.mono.winner ? 'finished' : 'active', turn_player_id: current?.id || null, updated_at: new Date().toISOString() }).eq('id', state.monoRoom.id);
+    if (error) { console.warn('Monopoly move did not sync:', error); toast('That move did not sync. Check your connection.'); }
+  }
+  $('#mono-online-open').addEventListener('click', showMonopolyOnlineMenu);
   function startMonopoly() {
     state.mono = { players: [
       { name: state.name, token: tokenSet[0].icon, color: tokenSet[0].color, money: 1500, pos: 0, jail: 0, bankrupt: false },
       { name: 'Guest 2', token: tokenSet[1].icon, color: tokenSet[1].color, money: 1500, pos: 0, jail: 0, bankrupt: false }
-    ], current: 0, owned: {}, houses: {}, rolled: false, pending: null, log: [] };
+    ], current: 0, owned: {}, houses: {}, rolled: false, pending: null, log: [], winner: null };
     buildMonopolyBoard(); drawMonopoly();
   }
+  async function leaveMonopolyOnline() { clearInterval(state.monoHeartbeat); if (state.monoRoom && state.supabase) await state.supabase.rpc('heartbeat_monopoly_room', { p_room_id: state.monoRoom.id, p_connected: false }); if (state.monoChannel) await state.supabase.removeChannel(state.monoChannel); if (state.monoPresence) await state.supabase.removeChannel(state.monoPresence); state.monoRoom = null; state.monoChannel = null; state.monoPresence = null; state.monoMembers = []; $('#mono-note').textContent = 'Local table - 2 to 4 players. Make a deal, dodge rent, keep your friends.'; }
   function logMono(text) {
     state.mono.log.unshift(text);
     $('#mono-log-lines').innerHTML = state.mono.log.slice(0, 4).map(line => '<div>' + escapeHtml(line) + '</div>').join('');
@@ -239,6 +334,7 @@
     if (!state.mono) return;
     buildMonopolyBoard();
     const board = $('#mono-board'), current = state.mono.players[state.mono.current], coords = monopolyCoordinates();
+    $('#mono-log-lines').innerHTML = (state.mono.log || []).slice(0, 4).map(line => '<div>' + escapeHtml(line) + '</div>').join('') || 'Welcome to the deal. Roll when you are ready.';
     spaces.forEach((space, index) => {
       const tile = board.querySelector('[data-space="' + index + '"]'), ownerIndex = state.mono.owned[index];
       const occupants = state.mono.players.filter(player => !player.bankrupt && player.pos === index);
@@ -260,21 +356,24 @@
     });
     $('#mono-current').innerHTML = '<span class="current-token">' + escapeHtml(current.token) + '</span><span>' + escapeHtml(current.name) + ' - <small>' + cash(current.money) + '</small></span>';
     $('#mono-current').style.setProperty('--player-color', current.color); $('.mono-turn').classList.toggle('is-active', !current.bankrupt);
-    $('#roll-dice').disabled = state.mono.rolled || current.bankrupt; $('#roll-dice').classList.toggle('hidden', state.mono.rolled);
+    $('#roll-dice').disabled = state.mono.rolled || current.bankrupt || !canActMonopoly(); $('#roll-dice').classList.toggle('hidden', state.mono.rolled);
+    ['buy-property', 'build-house', 'pay-rent'].forEach(id => { const button = $('#' + id); if (button) button.disabled = !canActMonopoly(); });
+    if (state.monoRoom && !canActMonopoly() && !state.mono.rolled && state.monoRoom.status === 'active') $('#landing-copy').textContent = current.name + ' is up. Their turn is underway.';
     if (!state.mono.pending) {
       $('#landing-name').textContent = 'Your move, ' + current.name + '.';
       $('#landing-copy').textContent = 'Give the dice a toss. Your future landlord awaits.';
       $('#property-price').textContent = ''; $('#buy-property').classList.add('hidden'); $('#build-house').classList.add('hidden'); $('#pay-rent').classList.add('hidden');
     }
+    if (state.monoRoom?.status === 'active' && !state.mono.pending && state.mono.lastAction) $('#landing-copy').textContent = state.mono.lastAction;
     if (state.mono.winner) { $('#landing-name').textContent = emoji(0x1f3c6) + ' ' + state.mono.winner.name + ' wins!'; $('#landing-copy').textContent = 'The rest of the table is officially out of pocket.'; }
   }
   function endMonoTurn() {
-    if (state.mono.winner) return;
+    if (state.mono.winner || !canActMonopoly()) return;
     state.mono.rolled = false; state.mono.pending = null;
     let attempts = 0;
     do { state.mono.current = (state.mono.current + 1) % state.mono.players.length; attempts++; }
     while (state.mono.players[state.mono.current].bankrupt && attempts < state.mono.players.length);
-    drawMonopoly();
+    drawMonopoly(); persistMonopoly(state.mono.players[state.mono.current].name + ' is up next.');
   }
   function getOut(player, cost, recipient) {
     if (player.money >= cost) { player.money -= cost; if (recipient) recipient.money += cost; return true; }
@@ -285,15 +384,15 @@
   }
   $('#roll-dice').addEventListener('click', () => {
     const game = state.mono;
-    if (!game || game.rolled || game.winner) return;
+    if (!game || game.rolled || game.winner || !canActMonopoly()) return;
     const player = game.players[game.current];
     if (player.jail > 0) {
       player.jail--; player.pos = 10; game.rolled = true; game.pending = { type: 'jail' };
       $('#dice-result').textContent = player.name + ' is on a short break (' + player.jail + ' turn' + (player.jail === 1 ? '' : 's') + ' left).';
       $('#landing-name').textContent = 'Behind bars for a bit'; $('#landing-copy').textContent = 'Pay ' + cash(50) + ' to make bail, or sit tight for another turn.';
       $('#pay-rent').textContent = 'Pay ' + cash(50) + ' bail'; $('#pay-rent').classList.remove('hidden');
-      $('#pay-rent').onclick = () => { if (player.money >= 50) { player.money -= 50; player.jail = 0; game.rolled = false; $('#dice-result').textContent = 'Bail paid. You are back in business.'; $('#pay-rent').classList.add('hidden'); } else endMonoTurn(); drawMonopoly(); };
-      drawMonopoly(); return;
+      $('#pay-rent').onclick = () => { if (!canActMonopoly()) return; if (player.money >= 50) { player.money -= 50; player.jail = 0; game.rolled = false; $('#dice-result').textContent = 'Bail paid. You are back in business.'; $('#pay-rent').classList.add('hidden'); } else return endMonoTurn(); drawMonopoly(); persistMonopoly(player.name + ' paid bail.'); };
+      drawMonopoly(); persistMonopoly(player.name + ' is cooling off in jail.'); return;
     }
     const a = 1 + Math.floor(Math.random() * 6), b = 1 + Math.floor(Math.random() * 6), roll = a + b;
     game.rolled = true;
@@ -339,29 +438,31 @@
     }
     $('#pay-rent').classList.remove('hidden'); $('#pay-rent').textContent = 'Next player'; $('#pay-rent').onclick = endMonoTurn;
     drawMonopoly();
+    persistMonopoly(player.name + ' rolled ' + roll + ' and landed on ' + space.name + '.');
   });
   function isOuch(name) { return name === 'The Angel Islington' ? '- that is a steep little angel.' : '- ouch, that adds up.'; }
   $('#buy-property').addEventListener('click', () => {
     const game = state.mono, player = game.players[game.current], index = game.pending.index, space = spaces[index];
-    if (!game || player.money < space.price) return;
+    if (!game || !canActMonopoly() || player.money < space.price) return;
     player.money -= space.price; game.owned[index] = game.current;
     logMono(emoji(0x2728) + ' ' + player.name + ' claimed ' + space.name + ' for ' + cash(space.price) + '. Nice little land grab.');
     $('#landing-copy').textContent = 'The deed is yours. ' + space.detail + ' Keep the rent coming.';
     $('#buy-property').classList.add('hidden'); $('#property-price').textContent = 'YOURS - ' + cash(space.price);
-    drawMonopoly(); flashMonopoly('purchase', emoji(0x2728) + ' ' + space.name + ' is yours!');
+    drawMonopoly(); flashMonopoly('purchase', emoji(0x2728) + ' ' + space.name + ' is yours!'); persistMonopoly(player.name + ' bought ' + space.name + '.');
   });
   $('#build-house').addEventListener('click', () => {
     const game = state.mono, player = game.players[game.current], index = game.pending.index, space = spaces[index], cost = Math.ceil(space.price / 2);
-    if (!game || game.owned[index] !== game.current || player.money < cost || (game.houses[index] || 0) >= 4) return;
+    if (!game || !canActMonopoly() || game.owned[index] !== game.current || player.money < cost || (game.houses[index] || 0) >= 4) return;
     player.money -= cost; game.houses[index] = (game.houses[index] || 0) + 1;
     logMono(emoji(0x1f3e0) + ' ' + player.name + ' added a house to ' + space.name + ' for ' + cash(cost) + '. Rent just got ambitious.');
-    $('#build-house').classList.add('hidden'); $('#landing-copy').textContent = 'Home sweet home. Your place now has ' + game.houses[index] + ' house' + (game.houses[index] === 1 ? '' : 's') + '.'; $('#property-price').textContent = 'HOUSE BUILT'; drawMonopoly();
+    $('#build-house').classList.add('hidden'); $('#landing-copy').textContent = 'Home sweet home. Your place now has ' + game.houses[index] + ' house' + (game.houses[index] === 1 ? '' : 's') + '.'; $('#property-price').textContent = 'HOUSE BUILT'; drawMonopoly(); persistMonopoly(player.name + ' built on ' + space.name + '.');
   });
-  $('#mono-new').addEventListener('click', () => {
+  $('#mono-new').addEventListener('click', async () => {
     const count = Number(prompt('How many players are joining the deal? (2-4)', '2'));
     if (!Number.isFinite(count) || count < 2 || count > 4) { toast('Pick a table for 2-4 players.'); return; }
     const customNames = [state.name];
     for (let i = 1; i < count; i++) customNames.push(prompt('Player ' + (i + 1) + ' name?', 'Guest ' + (i + 1)) || 'Guest ' + (i + 1));
+    await leaveMonopolyOnline();
     startMonopoly();
     state.mono.players = customNames.map((name, index) => ({ name: escapeHtml(name), token: tokenSet[index].icon, color: tokenSet[index].color, money: 1500, pos: 0, jail: 0, bankrupt: false }));
     drawMonopoly();
@@ -382,12 +483,12 @@
   function renderRequests() { $('#request-count').textContent = state.requests.length; $('#request-list').innerHTML = state.requests.length ? state.requests.map(request => `<div class="request-row"><span class="avatar friend-avatar lilac">${escapeHtml((request.name || request.username).slice(0,1).toUpperCase())}</span><div class="friend-detail"><b>${escapeHtml(request.username)}</b><span>Wants to be friends</span></div><div class="request-actions"><button class="accept" data-accept="${escapeHtml(request.id)}">Accept</button><button data-decline="${escapeHtml(request.id)}">Decline</button></div></div>`).join('') : '<div class="empty-state">No new requests. Your next opponent might be one search away.</div>'; }
   $('#request-list').addEventListener('click', async event => { const accept = event.target.closest('[data-accept]'), decline = event.target.closest('[data-decline]'); const id = accept?.dataset.accept || decline?.dataset.decline; if (!id) return; const request = state.requests.find(item => String(item.id) === String(id)); if (!request) return; if (state.user && state.supabase && request.dbId) { await state.supabase.from('friend_requests').update({ status: accept ? 'accepted' : 'declined' }).eq('id', request.dbId); if (accept) await state.supabase.from('friendships').insert({ user_id: state.user.id, friend_id: request.id }); } const result = ArcadeSocial.respondToRequest(state.friends, state.requests, id, !!accept); state.friends = result.friends; state.requests = result.requests; renderRequests(); renderFriends(); updateStats(); toast(accept ? `You and @${request.username} are friends now.` : 'Request declined.'); });
   $('#friend-list').addEventListener('click', async event => { const remove = event.target.closest('[data-remove]'); if (remove) { const username = remove.dataset.remove; if (state.user && state.supabase) { const { data } = await state.supabase.from('profiles').select('id').eq('username', username).maybeSingle(); if (data) await state.supabase.from('friendships').delete().or(`and(user_id.eq.${state.user.id},friend_id.eq.${data.id}),and(user_id.eq.${data.id},friend_id.eq.${state.user.id})`); } state.friends = state.friends.filter(friend => friend.username !== username); renderFriends(); updateStats(); toast(`Removed @${username} from friends.`); } const invite = event.target.closest('[data-invite]'); if (invite) { $('#friend-search').value = invite.dataset.invite; $('#invite-game').value = 'chess'; toast(`Choose a game below to invite @${invite.dataset.invite}.`); } });
-  $('#send-invite').addEventListener('click', async () => { const selected = $('#friend-search').value.trim(); if (!selected) return toast('Search for a friend first, then tap Invite.'); const game = $('#invite-game').value; if (game === 'monopoly') return toast('Online Monopoly is not ready yet. Start a local table from Play.'); if (!state.user || !state.supabase) return toast(`Sign in and connect Supabase to send a live ${game} invite.`); const { data: profile } = await state.supabase.from('profiles').select('id').eq('username', ArcadeSocial.normalizeUsername(selected)).maybeSingle(); if (!profile) return toast('No player found.'); const { error } = await state.supabase.from('invitations').insert({ sender_id: state.user.id, receiver_id: profile.id, game }); if (error) return toast(error.message); toast(`Invitation sent to @${selected}.`); });
+  $('#send-invite').addEventListener('click', async () => { const selected = $('#friend-search').value.trim(); if (!selected) return toast('Search for a friend first, then tap Invite.'); const game = $('#invite-game').value; if (game === 'monopoly' && (!state.monoRoom || state.monoRoom.status !== 'lobby')) return toast('Create an online Monopoly room first, then invite your friend from here.'); if (!state.user || !state.supabase) return toast(`Sign in and connect Supabase to send a live ${game} invite.`); const { data: profile } = await state.supabase.from('profiles').select('id').eq('username', ArcadeSocial.normalizeUsername(selected)).maybeSingle(); if (!profile) return toast('No player found.'); const { error } = await state.supabase.from('invitations').insert({ sender_id: state.user.id, receiver_id: profile.id, game, ...(game === 'monopoly' ? { room_code: state.monoRoom.code } : {}) }); if (error) return toast(error.message); toast(game === 'monopoly' ? `Room invite sent to @${selected}.` : `Invitation sent to @${selected}.`); });
   $('#friend-search').addEventListener('keydown', event => { if (event.key === 'Enter') sendFriendRequest(event.target.value.trim()); });
 
   async function syncMove(move) { if (!state.user || !state.supabase || !state.activeRoom || !state.chess) return; const ply = state.roomPly + 1, record = { room_id: state.activeRoom.id, player_id: state.user.id, ply, state: { fen: state.chess.fen(), san: move.san, from: move.from, to: move.to } }; const { error } = await state.supabase.from('game_moves').insert(record); if (error) { toast('Move could not sync. Reconnecting…'); loadRoom(); return; } state.roomPly = ply; state.activeRoom.lastState = record.state; await state.supabase.from('game_rooms').update({ state: record.state, updated_at: new Date().toISOString() }).eq('id', state.activeRoom.id); }
-  async function createRoomForInvite(invite) { if (!state.supabase || !state.user || invite.status !== 'accepted' || invite.room_id || state.creatingRooms?.has(invite.id)) return; if (!state.creatingRooms) state.creatingRooms = new Set(); state.creatingRooms.add(invite.id); const fen = new Chess().fen(); const { data: room, error } = await state.supabase.from('game_rooms').insert({ game: invite.game, player_one: invite.sender_id, player_two: invite.receiver_id, state: { fen } }).select('id').single(); if (error) { toast(error.message); state.creatingRooms.delete(invite.id); return; } await state.supabase.from('invitations').update({ room_id: room.id }).eq('id', invite.id); launchOnlineRoom(room.id, invite.game, true); }
-  async function launchOnlineRoom(roomId, game, isSender) { if (game !== 'chess') { toast('This invitation was accepted. Online Monopoly tables are still being built.'); return; } if (state.activeRoom?.id === roomId) return; state.activeRoom = { id: roomId }; state.roomPly = 0; state.chessMode = 'online'; state.chessColor = isSender ? 'w' : 'b'; state.clockMode = 0; state.chess = null; closeModal(); go('chess'); if (state.roomChannel) await state.supabase.removeChannel(state.roomChannel); state.roomChannel = state.supabase.channel(`room-${roomId}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'game_moves', filter: `room_id=eq.${roomId}` }, payload => applyRoomMove(payload.new)).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_rooms', filter: `id=eq.${roomId}` }, payload => handleRoomUpdate(payload.new)).subscribe(status => { if (status === 'SUBSCRIBED') loadRoom(); }); }
+  async function createRoomForInvite(invite) { if (invite.game === 'monopoly' || !state.supabase || !state.user || invite.status !== 'accepted' || invite.room_id || state.creatingRooms?.has(invite.id)) return; if (!state.creatingRooms) state.creatingRooms = new Set(); state.creatingRooms.add(invite.id); const fen = new Chess().fen(); const { data: room, error } = await state.supabase.from('game_rooms').insert({ game: invite.game, player_one: invite.sender_id, player_two: invite.receiver_id, state: { fen } }).select('id').single(); if (error) { toast(error.message); state.creatingRooms.delete(invite.id); return; } await state.supabase.from('invitations').update({ room_id: room.id }).eq('id', invite.id); launchOnlineRoom(room.id, invite.game, true); }
+  async function launchOnlineRoom(roomId, game, isSender) { if (game !== 'chess') { toast('Monopoly invites use room codes. Create or join a table from the Monopoly page.'); return; } if (state.activeRoom?.id === roomId) return; state.activeRoom = { id: roomId }; state.roomPly = 0; state.chessMode = 'online'; state.chessColor = isSender ? 'w' : 'b'; state.clockMode = 0; state.chess = null; closeModal(); go('chess'); if (state.roomChannel) await state.supabase.removeChannel(state.roomChannel); state.roomChannel = state.supabase.channel(`room-${roomId}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'game_moves', filter: `room_id=eq.${roomId}` }, payload => applyRoomMove(payload.new)).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_rooms', filter: `id=eq.${roomId}` }, payload => handleRoomUpdate(payload.new)).subscribe(status => { if (status === 'SUBSCRIBED') loadRoom(); }); }
   async function loadRoom() { if (!state.activeRoom || !state.supabase) return; const { data: room } = await state.supabase.from('game_rooms').select('id,game,state,status').eq('id', state.activeRoom.id).maybeSingle(); if (!room) { toast('Waiting for the game room to reconnect.'); return; } state.activeRoom.lastState = room.state; if (!state.chess) { state.chessMode = 'online'; state.clockMode = 0; startChess(); go('chess'); } const { data: moves } = await state.supabase.from('game_moves').select('ply,player_id,state').eq('room_id', room.id).order('ply', { ascending: false }).limit(1); const latest = moves?.[0]; if (latest && latest.ply > state.roomPly) applyRoomMove(latest); else if (!latest && room.state?.fen && state.chess.fen() !== room.state.fen) { state.chess.load(room.state.fen); state.board.position(room.state.fen); } if (room.status === 'finished') handleRoomUpdate(room); }
   function applyRoomMove(record) { if (!state.chess || !record?.state?.fen || record.ply <= state.roomPly) return; state.roomPly = record.ply; state.activeRoom.lastState = record.state; if (record.player_id !== state.user?.id) { state.history.push(state.chess.fen()); state.chess.load(record.state.fen); renderChess(record.state); } }
   function handleRoomUpdate(room) { if (!state.activeRoom || room.id !== state.activeRoom.id) return; state.activeRoom.lastState = room.state; if (room.status === 'finished') { state.finishedMessage = room.state?.result || 'Game finished'; clearInterval(state.clockTimer); renderChess(); return; } if (room.state?.drawOfferBy && room.state.drawOfferBy !== state.user?.id && !state.drawOfferOpen) { state.drawOfferOpen = true; showModal(`<div class="eyebrow muted">DRAW OFFER</div><h2 id="modal-title">Call it a draw?</h2><p>Your opponent suggests shaking hands and sharing the point.</p><button class="button primary full" id="accept-draw">Shake on it</button><button class="button secondary full" id="decline-draw">Not yet</button>`); $('#accept-draw').addEventListener('click', async () => { await state.supabase.from('game_rooms').update({ status: 'finished', state: { ...room.state, result: 'Draw agreed' } }).eq('id', room.id); state.drawOfferOpen = false; closeModal(); }); $('#decline-draw').addEventListener('click', async () => { const nextState = { ...room.state }; delete nextState.drawOfferBy; await state.supabase.from('game_rooms').update({ state: nextState }).eq('id', room.id); state.drawOfferOpen = false; closeModal(); }); } }
@@ -423,11 +524,13 @@
     if (!state.socialChannel) state.socialChannel = state.supabase.channel('arcade-social-' + state.user.id).on('postgres_changes', { event: '*', schema: 'public', table: 'friend_requests', filter: `receiver_id=eq.${state.user.id}` }, payload => { if (payload.eventType === 'INSERT') { toast('You have a new friend request.'); loadSocial(); } }).on('postgres_changes', { event: '*', schema: 'public', table: 'invitations', filter: `receiver_id=eq.${state.user.id}` }, payload => { if (payload.eventType === 'INSERT') showIncomingInvite(payload.new); if (payload.eventType === 'UPDATE' && payload.new.status === 'accepted' && payload.new.room_id) launchOnlineRoom(payload.new.room_id, payload.new.game, false); }).on('postgres_changes', { event: '*', schema: 'public', table: 'invitations', filter: `sender_id=eq.${state.user.id}` }, payload => { if (payload.eventType === 'UPDATE' && payload.new.status === 'accepted' && !payload.new.room_id) createRoomForInvite(payload.new); if (payload.eventType === 'UPDATE' && payload.new.room_id) launchOnlineRoom(payload.new.room_id, payload.new.game, true); }).subscribe();
     if (!state.presenceChannel) { const presence = state.supabase.channel('arcade-presence', { config: { presence: { key: state.user.id } } }); state.presenceChannel = presence; presence.on('presence', { event: 'sync' }, () => { const online = presence.presenceState(); state.friends = state.friends.map(friend => ({ ...friend, online: Object.values(online).flat().some(user => user.username === friend.username) })); renderFriends(); }).subscribe(async status => { if (status === 'SUBSCRIBED') await presence.track({ username: state.username, online_at: new Date().toISOString() }); }); }
   }
-  function showIncomingInvite(invite) { showModal(`<div class="eyebrow muted">GAME INVITATION</div><h2 id="modal-title">A ${escapeHtml(invite.game)} challenge!</h2><p>Someone saved you a seat at the board. Fancy a match?</p><button class="button primary full" id="accept-invite">Accept the challenge →</button><button class="button secondary full" id="decline-invite">Maybe next round</button>`); $('#accept-invite').addEventListener('click', async () => { const { error } = await state.supabase.from('invitations').update({ status: 'accepted' }).eq('id', invite.id); if (error) return toast(error.message); closeModal(); toast('Challenge accepted. See you at the board!'); }); $('#decline-invite').addEventListener('click', async () => { await state.supabase.from('invitations').update({ status: 'declined' }).eq('id', invite.id); closeModal(); }); }
+  function showIncomingInvite(invite) { showModal(`<div class="eyebrow muted">GAME INVITATION</div><h2 id="modal-title">A ${escapeHtml(invite.game)} challenge!</h2><p>Someone saved you a seat at the board. Fancy a match?</p><button class="button primary full" id="accept-invite">Accept the challenge →</button><button class="button secondary full" id="decline-invite">Maybe next round</button>`); $('#accept-invite').addEventListener('click', async () => { if (invite.game === 'monopoly') { const { data, error } = await state.supabase.rpc('join_monopoly_room', { p_code: invite.room_code || '', p_name: state.name }); if (error) return toast(error.message); const { error: acceptError } = await state.supabase.from('invitations').update({ status: 'accepted' }).eq('id', invite.id); if (acceptError) return toast(acceptError.message); await connectMonopolyRoom(data); toast('Seat claimed. Time to wheel and deal!'); return; } const { error } = await state.supabase.from('invitations').update({ status: 'accepted' }).eq('id', invite.id); if (error) return toast(error.message); closeModal(); toast('Challenge accepted. See you at the board!'); }); $('#decline-invite').addEventListener('click', async () => { await state.supabase.from('invitations').update({ status: 'declined' }).eq('id', invite.id); closeModal(); }); }
   $('#auth-button').addEventListener('click', () => { if (!state.supabase) return toast('Add your Supabase project keys in config.js first.'); showAuth(); });
   function showAuth(showGuestOption = false) { showModal(`<div class="eyebrow muted">YOUR ARCADE ACCOUNT</div><h2 id="modal-title">Welcome to the arcade</h2><p id="auth-intro">Sign in to save your profile and play with friends.</p><label>EMAIL<input id="auth-email" type="email" autocomplete="email" placeholder="you@example.com"></label><label>PASSWORD<input id="auth-password" type="password" autocomplete="current-password" placeholder="At least 6 characters"></label><button class="button primary full" id="auth-submit">Sign in</button><p class="auth-feedback" id="auth-feedback" role="status" aria-live="polite"></p><span class="inline-link" id="auth-toggle">New here? Create an account</span>${showGuestOption ? '<button class="button secondary full guest-continue" id="continue-guest">Continue as guest</button>' : ''}`); let signup = false; $('#auth-toggle').addEventListener('click', () => { signup = !signup; $('#modal-title').textContent = signup ? 'Join the arcade' : 'Welcome back'; $('#auth-intro').textContent = signup ? 'Create an account and save your place at the table.' : 'Sign in to save your profile and play with friends.'; $('#auth-submit').textContent = signup ? 'Create account' : 'Sign in'; $('#auth-toggle').textContent = signup ? 'Already have an account? Sign in' : 'New here? Create an account'; $('#auth-feedback').textContent = ''; }); $('#continue-guest')?.addEventListener('click', () => { closeModal(); toast('Playing as a guest. Have a good game!'); }); $('#auth-submit').addEventListener('click', async () => { const email = $('#auth-email').value.trim(), password = $('#auth-password').value, button = $('#auth-submit'), feedback = $('#auth-feedback'); if (!email || password.length < 6) { feedback.textContent = 'Enter your email and a password with at least 6 characters.'; return; } if (!state.supabase) { feedback.textContent = 'Account access is offline. Continue as a guest or check the message above.'; return; } button.disabled = true; button.textContent = signup ? 'Creating account…' : 'Signing in…'; feedback.textContent = ''; try { const result = signup ? await state.supabase.auth.signUp({ email, password, options: { data: { display_name: state.name } } }) : await state.supabase.auth.signInWithPassword({ email, password }); if (result.error) throw result.error; if (signup && !result.data.session) { feedback.textContent = 'Account created. Check your inbox for a confirmation link, then sign in.'; $('#auth-password').value = ''; button.textContent = 'Create account'; return; } state.user = result.data.user; updateAuthButton(); if (state.user) loadSocial(); closeModal(); toast(signup ? 'You’re in. Welcome to the arcade!' : 'Signed in. Good to have you back!'); } catch (error) { console.warn('Supabase authentication request failed', error); feedback.textContent = error.message || 'Supabase could not complete that request. Try again in a moment.'; } finally { button.disabled = false; if ($('#auth-submit')) $('#auth-submit').textContent = signup ? 'Create account' : 'Sign in'; } }); }
   $('#sign-out').addEventListener('click', async () => { await state.supabase.auth.signOut(); state.user = null; state.friends = []; state.requests = []; state.sentRequests = []; renderFriends(); renderRequests(); updateAuthButton(); toast('Signed out.'); });
   async function boot() { renderFriends(); renderRequests(); updateAuthButton(); try { await connectSupabase(); } catch (error) { const message = error.message || 'Unable to connect to Supabase.'; console.warn('Supabase startup issue:', message); showAppNotice(`${message} You can continue as a guest; sign-in and sign-up may be unavailable.`); } if (!state.user) showAuth(true); if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(error => console.warn('Service worker unavailable:', error)); }
+  window.ArcadeRuntime = { get supabase() { return state.supabase; }, get user() { return state.user; }, get name() { return state.name; }, openAuth() { showAuth(); } };
   window.arcadeReady = false;
   boot().finally(() => { window.arcadeReady = true; });
 })();
+
