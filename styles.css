@@ -112,3 +112,17 @@
 #chessboard{touch-action:none;user-select:none;-webkit-user-select:none}
 #chessboard.drag-active .piece-417db{transition:none}
 #chessboard .piece-417db{will-change:transform}
+
+/* Pool rack, groups and tray stay readable without changing the approved table style. */
+.pool-remaining-card{padding:12px;background:#191a1e;border:1px solid #2d2e34;border-radius:13px}
+.pool-remaining-card .eyebrow{font-size:9px}
+.pool-ball-group{padding:7px 0;border-top:1px solid #2d2e34}
+.pool-balls-label{margin-bottom:5px;color:#aeb0b4;font-size:10px}
+.pool-ball-group.is-mine{margin:0 -5px;padding:7px 5px;border-radius:8px;background:#293123;box-shadow:inset 0 0 0 1px #c1f07845}
+.pool-ball-group.is-mine .pool-balls-label{color:#d9f3bb;font-weight:700}
+.pool-ball-pills,.pool-pocket-tray{display:flex;flex-wrap:wrap;gap:4px;min-height:22px;align-items:center}
+.pool-ball-pill{display:inline-grid;place-items:center;width:19px;height:19px;border-radius:50%;border:1px solid #fff8;color:#fff;font:700 9px var(--mono);text-shadow:0 1px 2px #000;background:#303238}
+.pool-ball-pill.ball-0{background:#f4f1e5;color:#292921;text-shadow:none}.pool-ball-pill.ball-1,.pool-ball-pill.ball-9{background:#e8c42e;color:#242014;text-shadow:none}.pool-ball-pill.ball-2,.pool-ball-pill.ball-10{background:#3569be}.pool-ball-pill.ball-3,.pool-ball-pill.ball-11{background:#c83d39}.pool-ball-pill.ball-4,.pool-ball-pill.ball-12{background:#74409c}.pool-ball-pill.ball-5,.pool-ball-pill.ball-13{background:#d8792f}.pool-ball-pill.ball-6,.pool-ball-pill.ball-14{background:#428553}.pool-ball-pill.ball-7,.pool-ball-pill.ball-15{background:#873a36}.pool-ball-pill.ball-8{background:#141519}
+.pool-ball-pill.ball-9,.pool-ball-pill.ball-10,.pool-ball-pill.ball-11,.pool-ball-pill.ball-12,.pool-ball-pill.ball-13,.pool-ball-pill.ball-14,.pool-ball-pill.ball-15{box-shadow:inset 0 0 0 5px #fff9}
+.pool-pocket-tray{padding-top:5px}.pool-pocket-tray small,.pool-ball-pills small,.pool-open-table{color:#82848b;font-size:9px}.tray-heading{margin-top:10px}
+@media(max-width:680px){.pool-remaining-card{padding:8px;border-radius:10px}.pool-ball-group{padding:5px 0}.pool-ball-pill{width:17px;height:17px;font-size:8px}.pool-balls-label{font-size:9px}}
